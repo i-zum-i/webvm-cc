@@ -39,7 +39,7 @@ jobs:
 
       - name: Prepare public folder
         run: |
-          mkdir public
+          mkdir -p public
           mv disk.img public/
           cp index.html config.js public/
 
