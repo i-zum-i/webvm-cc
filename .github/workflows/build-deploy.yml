@@ -1,43 +1,56 @@
-name: Build and Deploy WebVM Image
+name: Build WebVM with Claude CLI
 
 on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pages: write
-      id-token: write
-
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Build container and export rootfs
+        run: |
+          docker build -t claude-vm .
+          container_id=$(docker create claude-vm)
+          docker export $container_id -o rootfs.tar
+          mkdir rootfs
+          tar -xf rootfs.tar -C rootfs
 
-    - name: Build WebVM image
-      uses: leaningtech/webvm-action@v1
-      with:
-        dockerfile: ./Dockerfile
+      - name: Create ext2 disk image
+        run: |
+          sudo apt-get update && sudo apt-get install -y e2fsprogs
+          dd if=/dev/zero of=disk.img bs=1M count=2048
+          mkfs.ext2 -F disk.img
+          mkdir mnt
+          sudo mount -o loop disk.img mnt
+          sudo cp -a rootfs/* mnt/
+          sudo umount mnt
 
-    - name: Upload to GitHub Pages
-      uses: actions/upload-pages-artifact@v3
-      with:
-        path: ./public
+      - name: Prepare public folder
+        run: |
+          mkdir public
+          mv disk.img public/
+          cp index.html config.js public/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./public
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-
     steps:
-    - name: Deploy to GitHub Pages
-      uses: actions/deploy-pages@v4
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
